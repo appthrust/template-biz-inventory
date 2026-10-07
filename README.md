@@ -1,21 +1,71 @@
-# AppThrust Next.js PostgreSQL template
+# 在庫管理
 
-This starter proves the AppThrust managed PostgreSQL path:
+備品や資材の「いまある数」と「入出庫の履歴」をチームで共有する、日本語の業務アプリです。Next.js App Router・Server Actions・PostgreSQL（`pg`）で動きます。
 
-- AppThrust injects `DATABASE_URL` through `ComponentConnection`.
-- The initial schema is applied through `DatabaseChange`.
-- The Next.js app reads and writes `appthrust_demo_messages`.
+## できること
 
-The app does not run migrations on startup. For local development, apply
-`db/migrations/0001_init.sql` to your PostgreSQL database, then set:
+- **品目の管理**: 名前・品番・単位・発注点・備考を追加、編集、削除。
+- **入出庫の記録**: 日本時間の日時・品目・数量±・理由・記録者名を保存。入庫は正、出庫は負の数で入力します。数量は整数9桁、小数3桁まで。
+- **在庫の確認**: 入出庫数量の合計が在庫数です。発注点を下回る品目を黄色で表示します。同数は警告しません。負の在庫も記録でき、発注点割れとして表示されます。
+- **検索**: 名前・品番・備考の部分一致で探せます。
+- **CSV取込**: 品番をキーに品目を追加・更新します（512KB / 500品目まで）。全行を検証し、1行でも不備があれば何も保存しません。
+- **CSV書き出し**: 在庫一覧と入出庫履歴を全件ダウンロードできます。画面の履歴は最新100件です。
+- **スマートフォン対応**: 片手でも操作しやすいフォームと一覧です。
 
-```bash
-DATABASE_URL=postgresql://app:password@localhost:5432/app
+品目の削除は一覧からの非表示です。入出庫履歴は残り、削除済みと表示されます。削除した品番は再利用できません。入出庫履歴は直接編集・削除せず、逆の数量を新たに記録して訂正します。履歴の品目名・品番・単位は、品目の現在の値で表示されます。単位を別の意味に変える場合は、新しい品目を作ってください。
+
+認証機能はありません。AppThrust の公開範囲・SSOでアクセスを制御してください。このアプリにアクセスできる人は全操作ができます。記録者名は本人認証ではなく、手入力の業務メモです。
+
+## CSVの形式
+
+UTF-8（BOMあり・なし両対応）、見出しを次の順番にしてください。「取込用の見本」からダウンロードもできます。
+
+```csv
+名前,品番,単位,発注点,備考
+クリアファイル,OFF-003,枚,20,文具棚に保管
 ```
 
-Run locally:
+カンマ・改行・引用符を含む欄は一般的なCSVの二重引用符形式に対応します。品番は大文字・小文字を区別します。同じファイル内の品番重複はエラーです。在庫一覧の書き出し（末尾に「在庫数,状態」）も取り込めますが、この2列は無視されます。在庫は必ず入出庫から変更してください。新規品目の在庫は0です。
+
+書き出しはExcelで開けるUTF-8 BOM付きです。数式として扱われる可能性のある文字列の先頭には安全のため `'` を付けます。該当する品番を再取込する際は元の品番に戻してください（数量などの数値列には付けません）。検索中でも書き出しは全品目が対象です。
+
+## ローカルで動かす
+
+Node.js 24 と PostgreSQL 17を推奨します。
 
 ```bash
-npm install
+npm ci
+docker run --name inventory-db -p 127.0.0.1:5432:5432 \
+  -e POSTGRES_USER=inventory -e POSTGRES_PASSWORD=local-password \
+  -e POSTGRES_DB=inventory -d postgres:17-alpine
+export DATABASE_URL='postgresql://inventory:local-password@localhost:5432/inventory'
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/0001_init.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/0002_inventory.sql
 npm run dev
 ```
+
+`http://localhost:3000` を開きます。接続設定は `.env.local` に `DATABASE_URL=...` と書いてもかまいません。接続情報はコミットしないでください。ローカルの使い捨てデータを削除するときは `docker rm -f -v inventory-db` を実行します。
+
+### 初期設定と公開
+
+**アプリは起動時にマイグレーションを実行しません。** AppThrust が `db/migrations/*.sql` を `DatabaseChange` で適用し、`DATABASE_URL` を設定します。ローカルでは上記の `psql` を使います。`0001_init.sql` は元のひな形の番号を残した空の移行、`0002_inventory.sql` が在庫管理の表と初期データを作ります。同じ移行を再適用しても、初期在庫は重複しません。
+
+初回の移行でコピー用紙・ボールペン・梱包テープと開始時の棚卸記録が入るため、最初に開いた時から試せます。実運用を始める際は、不要な例の品目を削除して自分たちの品目を追加してください。
+
+元のDockerfileと `.github/workflows/deploy.yml` は変更していません。`main` にpushするとActionsがイメージを作り、`ghcr.io/appthrust/template-biz-inventory:edge-...` に公開します。ビルド時は接続設定不要です。
+
+```bash
+npm run build
+node --test tests/inventory.test.mjs
+```
+
+## AIと業務に合わせて広げる
+
+AIには最初に `AGENTS.md` を読んでもらい、**いまの動作を残しながら何を変えたいか**を業務の言葉で伝えてください。
+
+- 「品目に保管場所を追加して。入力・検索・CSV取込と書き出しにも反映して」
+- 「発注点を下回った品目だけを表示する切替を追加して」
+- 「月ごとの出庫量を集計して、よく使う備品を確認したい」
+- 「記録者別に履歴を絞り込みたい」
+
+表の変更は新しい番号のSQL移行を追加します。既存の在庫は履歴の合計であること、履歴を失わないこと、削除した品目へ記録できないことを維持してください。試す際は本番とは別のデータを使い、更新前にはバックアップを取ってください。
