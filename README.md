@@ -41,6 +41,7 @@ docker run --name inventory-db -p 127.0.0.1:5432:5432 \
 export DATABASE_URL='postgresql://inventory:local-password@localhost:5432/inventory'
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/0001_init.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/0002_inventory.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/0003_labels.sql
 npm run dev
 ```
 
@@ -48,7 +49,7 @@ npm run dev
 
 ### 初期設定と公開
 
-**アプリは起動時にマイグレーションを実行しません。** AppThrust が `db/migrations/*.sql` を `DatabaseChange` で適用し、`DATABASE_URL` を設定します。ローカルでは上記の `psql` を使います。`0001_init.sql` は元のひな形の番号を残した空の移行、`0002_inventory.sql` が在庫管理の表と初期データを作ります。同じ移行を再適用しても、初期在庫は重複しません。
+**アプリは起動時にマイグレーションを実行しません。** AppThrust が `db/migrations/*.sql` を `DatabaseChange` で適用し、`DATABASE_URL` を設定します。ローカルでは上記の `psql` を使います。`0001_init.sql` は元のひな形の番号を残した空の移行、`0002_inventory.sql` が在庫管理の表と初期データを作り、`0003_labels.sql` がデータタブの表・列に日本語名を設定します。同じ移行を再適用しても、初期在庫は重複しません。
 
 初回の移行でコピー用紙・ボールペン・梱包テープと開始時の棚卸記録が入るため、最初に開いた時から試せます。実運用を始める際は、不要な例の品目を削除して自分たちの品目を追加してください。
 
